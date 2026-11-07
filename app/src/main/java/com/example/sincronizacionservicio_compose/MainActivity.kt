@@ -55,26 +55,54 @@ class MainActivity : ComponentActivity() {
 fun PantallaSincronizacion() {
     val context = LocalContext.current
     var resultado by remember { mutableStateOf<String?>(null) }
+    var esError by remember { mutableStateOf(false) }
+    var sincronizando by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
-        val receiver = object : BroadcastReceiver() {
+        //Receptor 1: Éxito
+        val receiverExito = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
-                Log.d("SYNC", "3. Aviso recibido en la pantalla")
+                Log.d("SYNC", "3. Aviso de éxito recibido en UI")
                 val cantidad = intent?.getIntExtra("edificios_actualizados", 0) ?: 0
-                resultado = "Sincronización completa: $cantidad edificios actualizados"
+                resultado = "Sincronización completa: $cantidad edificios actualizados."
+                esError = false
+                sincronizando = false
             }
         }
-        val filtro = IntentFilter("com.example.sincronizacionservicio_compose.ACCION_SYNC_LISTA")
+
+        //Receptor 2: Error
+        val receiverError = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                Log.d("SYNC", "3. Aviso de error recibido en UI")
+                val errorMsg = intent?.getStringExtra("mensaje_error") ?: "Error desconocido en el servicio."
+                resultado = errorMsg
+                esError = true
+                sincronizando = false
+            }
+        }
+
+        val filtroExito = IntentFilter("com.example.sincronizacionservicio_compose.ACCION_SYNC_LISTA")
+        val filtroError = IntentFilter("com.example.sincronizacionservicio_compose.ACCION_SYNC_ERROR")
+
         ContextCompat.registerReceiver(
             context,
-            receiver,
-            filtro,
+            receiverExito,
+            filtroExito,
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        ContextCompat.registerReceiver(
+            context,
+            receiverError,
+            filtroError,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
         onDispose {
-            context.unregisterReceiver(receiver)
+            context.unregisterReceiver(receiverExito)
+            context.unregisterReceiver(receiverError)
         }
     }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -82,17 +110,41 @@ fun PantallaSincronizacion() {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Button(onClick = {
-            resultado = null
-            context.startService(Intent(context, SincronizacionService::class.java))
-        }) {
+        Button(
+            onClick = {
+                resultado = null
+                esError = false
+                sincronizando = true
+                context.startService(Intent(context, SincronizacionService::class.java))
+            },
+            enabled = !sincronizando
+        ) {
             Text("Sincronizar")
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = {
+                context.stopService(Intent(context, SincronizacionService::class.java))
+                sincronizando = false
+                esError = true
+                resultado = "Sincronización cancelada por el usuario."
+            },
+            enabled = sincronizando
+        ) {
+            Text("Detener sincronización")
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
-        if (resultado == null) {
+
+        if (sincronizando) {
             CircularProgressIndicator()
-        } else {
-            Text(resultado ?: "")
+        } else if (resultado != null) {
+            Text(
+                text = resultado ?: "",
+                color = if (esError) androidx.compose.ui.graphics.Color.Red else androidx.compose.ui.graphics.Color(0xFF2E7D32)
+            )
         }
     }
 }
